@@ -13,14 +13,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import prettytensor as pt
+# import prettytensor as pt
 import tensorflow as tf
 import utils
 import numpy as np
 import time
 
 from neuralnetworks import FullyConnected
-from prettytensor import bookkeeper
+# from prettytensor import bookkeeper
 
 class VariationalAutoencoder(object):
 
@@ -50,13 +50,15 @@ class VariationalAutoencoder(object):
 
 			self.x = tf.placeholder( tf.float32, [None, self.dim_x] )
 
-			self.encoder = FullyConnected(      dim_output      = 2 * self.dim_z,
-												hidden_layers   = hidden_layers_qz,
-												nonlinearity    = nonlin_qz   )
+			self.encoder = FullyConnected(dim_output=2 * self.dim_z,
+				hidden_layers=hidden_layers_qz,
+				nonlinearity=nonlin_qz,
+				scope='encoder')
 
-			self.decoder = FullyConnected(      dim_output      = self.dim_x,
-												hidden_layers   = hidden_layers_px,
-												nonlinearity    = nonlin_px  )
+			self.decoder = FullyConnected(dim_output=self.dim_x,
+				hidden_layers=hidden_layers_px,
+				nonlinearity=nonlin_px,
+				scope='decoder')
 
 			self._objective()
 			self.saver = tf.train.Saver()
@@ -66,24 +68,25 @@ class VariationalAutoencoder(object):
 
 		epsilon = tf.random_normal( ( tf.shape( mu ) ), 0, 1 )
 		sample = tf.add( mu, 
-				 tf.mul(  
+				 tf.multiply(  
 				 tf.exp( 0.5 * log_sigma_sq ), epsilon ) )
 
 		return sample
 
-	def _generate_zx( self, x, phase = pt.Phase.train, reuse = False ):
+	def _generate_zx( self, x, reuse = False ):
 
-		with tf.variable_scope('encoder', reuse = reuse):
-			encoder_out     = self.encoder.output( x, phase = phase )
-		z_mu, z_lsgms   = encoder_out.split( split_dim = 1, num_splits = 2 )
+		# with tf.variable_scope('encoder', reuse = reuse):
+		encoder_out     = self.encoder.output( x, reuse=reuse)
+		# z_mu, z_lsgms   = encoder_out.split( split_dim = 1, num_splits = 2 )
+		z_mu, z_lsgms   = tf.split( encoder_out, axis = 1, num_or_size_splits = 2 )
 		z_sample        = self._draw_sample( z_mu, z_lsgms )
 
 		return z_sample, z_mu, z_lsgms 
 
-	def _generate_xz( self, z, phase = pt.Phase.train, reuse = False ):
+	def _generate_xz( self, z, reuse = False ):
 
-		with tf.variable_scope('decoder', reuse = reuse):
-			x_recon_logits = self.decoder.output( z, phase = phase )
+		# with tf.variable_scope('decoder', reuse = reuse):
+		x_recon_logits = self.decoder.output( z, reuse=reuse )
 		x_recon = tf.nn.sigmoid( x_recon_logits )
 
 		return x_recon, x_recon_logits
@@ -117,8 +120,8 @@ class VariationalAutoencoder(object):
 		''' Evaluation '''
 		##################
 
-		self.z_sample_eval, _, _ = self._generate_zx( self.x, phase = pt.Phase.test, reuse = True )
-		self.x_recon_eval, _ = self._generate_xz( self.z_sample_eval, phase = pt.Phase.test, reuse = True )
+		self.z_sample_eval, _, _ = self._generate_zx( self.x, reuse = True )
+		self.x_recon_eval, _ = self._generate_xz( self.z_sample_eval, reuse = True )
 
 		self.eval_log_lik = - tf.reduce_mean( tf.reduce_sum( utils.tf_binary_xentropy( self.x, self.x_recon_eval ), 1 ) )
 
@@ -155,7 +158,7 @@ class VariationalAutoencoder(object):
 
 			self.optimiser = tf.train.AdamOptimizer( learning_rate = learning_rate, beta1 = beta1, beta2 = beta2 )
 			self.train_op = self.optimiser.minimize( self.cost )
-			init = tf.initialize_all_variables()
+			init = tf.global_variables_initializer()
 			self._test_vars = None
 
 		with self.session as sess:
@@ -188,11 +191,11 @@ class VariationalAutoencoder(object):
 
 				if epoch % print_every == 0:
 
-					test_vars = tf.get_collection(bookkeeper.GraphKeys.TEST_VARIABLES)
+					test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
 					if test_vars:
 						if test_vars != self._test_vars:
 							self._test_vars = list(test_vars)
-							self._test_var_init_op = tf.initialize_variables(test_vars)
+							self._test_var_init_op = tf.variables_initializer(test_vars)
 						self._test_var_init_op.run()
 
 

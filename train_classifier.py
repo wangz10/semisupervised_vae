@@ -65,7 +65,8 @@ if __name__ == '__main__':
     ''' Load VAE '''
     ################
 
-    VAE_model_path = 'models/VAE_600-600-0.0003-50.cpkt'
+    # VAE_model_path = 'models/VAE_600-600-0.0003-50.cpkt'
+    VAE_model_path = 'checkpoints/model_VAE_0.0003-50_1559758304.63.cpkt'
     min_std = 0.1 #Dimensions with std < min_std are removed before training with GC
 
     data_lab, data_ulab, data_valid, data_test = encode_dataset( VAE_model_path, min_std )

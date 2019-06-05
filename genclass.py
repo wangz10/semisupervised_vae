@@ -13,14 +13,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import prettytensor as pt
+# import prettytensor as pt
 import tensorflow as tf
 import numpy as np
 import utils
 import time
 
 from neuralnetworks import FullyConnected
-from prettytensor import bookkeeper
+# from prettytensor import bookkeeper
 
 class GenerativeClassifier( object ):
 
@@ -74,20 +74,23 @@ class GenerativeClassifier( object ):
 			self.x_unlabelled_lsgms 	= tf.placeholder( tf.float32, [None, self.dim_x] )
 			self.y_lab      			= tf.placeholder( tf.float32, [None, self.dim_y] )
 
-			self.classifier = FullyConnected( 	dim_output 		= self.dim_y, 
-												hidden_layers 	= hidden_layers_qy,
-												nonlinearity 	= nonlin_qy,
-												l2loss 			= l2_loss 	)
+			self.classifier = FullyConnected(dim_output=self.dim_y,
+											 hidden_layers=hidden_layers_qy,
+											 nonlinearity=nonlin_qy,
+											 l2loss=l2_loss,
+											 scope='classifier')
 
-			self.encoder = FullyConnected( 		dim_output 		= 2 * self.dim_z,
-												hidden_layers 	= hidden_layers_qz,
-												nonlinearity 	= nonlin_qz,
-												l2loss 			= l2_loss 	)
+			self.encoder = FullyConnected(dim_output=2 * self.dim_z,
+										  hidden_layers=hidden_layers_qz,
+										  nonlinearity=nonlin_qz,
+										  l2loss=l2_loss,
+										  scope='encoder')
 
-			self.decoder = FullyConnected( 		dim_output 		= 2 * self.dim_x,
-												hidden_layers 	= hidden_layers_px,
-												nonlinearity 	= nonlin_px,
-												l2loss 			= l2_loss 	)
+			self.decoder = FullyConnected(dim_output=2 * self.dim_x,
+										  hidden_layers=hidden_layers_px,
+										  nonlinearity=nonlin_px,
+										  l2loss=l2_loss,
+										  scope='decoder')
 
 			self._objective()
 			self.saver = tf.train.Saver()
@@ -99,33 +102,30 @@ class GenerativeClassifier( object ):
 
 		epsilon = tf.random_normal( ( tf.shape( mu ) ), 0, 1 )
 		sample = tf.add( mu, 
-				 tf.mul(  
+				 tf.multiply(  
 				 tf.exp( 0.5 * log_sigma_sq ), epsilon ) )
 
 		return sample
 
-	def _generate_yx( self, x_mu, x_log_sigma_sq, phase = pt.Phase.train, reuse = False ):
+	def _generate_yx( self, x_mu, x_log_sigma_sq, reuse = False ):
 
 		x_sample = self._draw_sample( x_mu, x_log_sigma_sq )
-		with tf.variable_scope('classifier', reuse = reuse):
-			y_logits = self.classifier.output( x_sample, phase )
+		y_logits = self.classifier.output( x_sample, reuse=reuse )
 
 		return y_logits, x_sample
 
 	def _generate_zxy( self, x, y, reuse = False ):
 
-		with tf.variable_scope('encoder', reuse = reuse):
-			encoder_out = self.encoder.output( tf.concat( 1, [x, y] ) )
-		z_mu, z_lsgms   = encoder_out.split( split_dim = 1, num_splits = 2 )
+		encoder_out = self.encoder.output( tf.concat( [x, y], axis=1 ), reuse=reuse )
+		z_mu, z_lsgms   = tf.split(encoder_out, axis = 1, num_or_size_splits = 2 )
 		z_sample        = self._draw_sample( z_mu, z_lsgms )
 
 		return z_sample, z_mu, z_lsgms 
 
 	def _generate_xzy( self, z, y, reuse = False ):
 
-		with tf.variable_scope('decoder', reuse = reuse):
-			decoder_out = self.decoder.output( tf.concat( 1, [z, y] ) )
-		x_recon_mu, x_recon_lsgms   = decoder_out.split( split_dim = 1, num_splits = 2 )
+		decoder_out = self.decoder.output( tf.concat( [z, y], axis=1 ), reuse=reuse )
+		x_recon_mu, x_recon_lsgms   = tf.split(decoder_out, axis = 1, num_or_size_splits = 2 )
 
 		return x_recon_mu, x_recon_lsgms
 
@@ -148,7 +148,7 @@ class GenerativeClassifier( object ):
 			if self.distributions['p_y'] == 'uniform':
 
 				y_prior = (1. / self.dim_y) * tf.ones_like( y )
-				log_prior_y = - tf.nn.softmax_cross_entropy_with_logits( y_prior, y )
+				log_prior_y = - tf.nn.softmax_cross_entropy_with_logits( logits=y_prior, labels=y )
 
 			if self.distributions['p_x'] == 'gaussian':
 
@@ -177,7 +177,7 @@ class GenerativeClassifier( object ):
 		L_lab = L(  [self.x_recon_lab_mu, self.x_recon_lab_lsgms], self.x_lab, self.y_lab,
 					[self.z_lab, self.z_lab_mu, self.z_lab_lsgms] )
 
-		L_lab += - self.beta * tf.nn.softmax_cross_entropy_with_logits( self.y_lab_logits, self.y_lab )
+		L_lab += - self.beta * tf.nn.softmax_cross_entropy_with_logits( logits=self.y_lab_logits, labels=self.y_lab )
 
 		############################
 		''' Unabelled Datapoints '''
@@ -192,7 +192,7 @@ class GenerativeClassifier( object ):
 				values += [ 1. ]
 
 			_y_ulab = tf.sparse_tensor_to_dense( 
-					  tf.SparseTensor( indices=indices, values=values, shape=[ self.num_ulab_batch, self.dim_y ] ), 0.0 )
+					  tf.SparseTensor( indices=indices, values=values, dense_shape=[ self.num_ulab_batch, self.dim_y ] ), 0.0 )
 
 			return _y_ulab
 
@@ -208,13 +208,13 @@ class GenerativeClassifier( object ):
 							[self.z_ulab, self.z_ulab_mu, self.z_ulab_lsgms]), 1)
 
 			if label == 0: L_ulab = tf.identity( _L_ulab )
-			else: L_ulab = tf.concat( 1, [L_ulab, _L_ulab] )
+			else: L_ulab = tf.concat( [L_ulab, _L_ulab], axis=1 )
 
-		self.y_ulab = self.y_ulab_logits.softmax_activation()
+		self.y_ulab = tf.nn.softmax(self.y_ulab_logits)
 
 		U = tf.reduce_sum( 
-			tf.mul( self.y_ulab, 
-			tf.sub( L_ulab, 
+			tf.multiply( self.y_ulab, 
+			tf.subtract( L_ulab, 
 			tf.log( self.y_ulab ) ) ), 1 )
 
 		########################
@@ -241,14 +241,19 @@ class GenerativeClassifier( object ):
 		##################
 
 		self.y_test_logits, _ = self._generate_yx( self.x_labelled_mu, self.x_labelled_lsgms, 
-			phase = pt.Phase.test, reuse = True )
-		self.y_test_pred = self.y_test_logits.softmax( self.y_lab )
+			reuse = True )
+		# self.y_test_pred = self.y_test_logits.softmax( self.y_lab )
+		self.y_test_pred = tf.nn.softmax(self.y_test_logits)
 
-		self.eval_accuracy = self.y_test_pred\
-				.softmax.evaluate_classifier( self.y_lab, phase = pt.Phase.test )
-		self.eval_cross_entropy = self.y_test_pred.loss
-		self.eval_precision, self.eval_recall = self.y_test_pred.softmax\
-				.evaluate_precision_recall( self.y_lab, phase = pt.Phase.test )
+		# self.eval_accuracy = self.y_test_pred\
+		# 		.softmax.evaluate_classifier( self.y_lab )
+		# self.eval_cross_entropy = self.y_test_pred.loss
+		# self.eval_precision, self.eval_recall = self.y_test_pred.softmax\
+		# 		.evaluate_precision_recall( self.y_lab )
+		self.eval_accuracy, _ = tf.metrics.accuracy(self.y_lab, self.y_test_pred)
+		self.eval_cross_entropy = tf.losses.softmax_cross_entropy(self.y_lab, self.y_test_logits)
+		self.eval_precision, _ = tf.metrics.precision(self.y_lab, self.y_test_pred)
+		self.eval_recall, _ = tf.metrics.recall(self.y_lab, self.y_test_pred)
 
 
 	def train(      self, x_labelled, y, x_unlabelled,
@@ -278,7 +283,7 @@ class GenerativeClassifier( object ):
 
 			self.optimiser = tf.train.AdamOptimizer( learning_rate = learning_rate, beta1 = beta1, beta2 = beta2 )
 			self.train_op = self.optimiser.minimize( self.cost )
-			init = tf.initialize_all_variables()
+			init = tf.global_variables_initializer()
 			self._test_vars = None
 			
 		
@@ -289,6 +294,7 @@ class GenerativeClassifier( object ):
 		with self.session as sess:
 
 			sess.run(init)
+			sess.run(tf.local_variables_initializer())
 			if load_path == 'default': self.saver.restore( sess, self.save_path )
 			elif load_path is not None: self.saver.restore( sess, load_path )	
 
@@ -322,11 +328,11 @@ class GenerativeClassifier( object ):
 
 				if epoch % print_every == 0:
 
-					test_vars = tf.get_collection(bookkeeper.GraphKeys.TEST_VARIABLES)
+					test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
 					if test_vars:
 						if test_vars != self._test_vars:
 							self._test_vars = list(test_vars)
-							self._test_var_init_op = tf.initialize_variables(test_vars)
+							self._test_var_init_op = tf.variables_initializer(test_vars)
 						self._test_var_init_op.run()
 
 
