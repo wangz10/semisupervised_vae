@@ -120,7 +120,7 @@ class VariationalAutoencoder(object):
 		''' Evaluation '''
 		##################
 
-		self.z_sample_eval, _, _ = self._generate_zx( self.x, reuse = True )
+		self.z_sample_eval, _, _ = self._generate_zx( self.x, reuse = True)
 		self.x_recon_eval, _ = self._generate_xz( self.z_sample_eval, reuse = True )
 
 		self.eval_log_lik = - tf.reduce_mean( tf.reduce_sum( utils.tf_binary_xentropy( self.x, self.x_recon_eval ), 1 ) )
@@ -191,7 +191,7 @@ class VariationalAutoencoder(object):
 
 				if epoch % print_every == 0:
 
-					test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+					test_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES)
 					if test_vars:
 						if test_vars != self._test_vars:
 							self._test_vars = list(test_vars)

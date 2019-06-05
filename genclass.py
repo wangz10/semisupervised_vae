@@ -242,7 +242,6 @@ class GenerativeClassifier( object ):
 
 		self.y_test_logits, _ = self._generate_yx( self.x_labelled_mu, self.x_labelled_lsgms, 
 			reuse = True )
-		# self.y_test_pred = self.y_test_logits.softmax( self.y_lab )
 		self.y_test_pred = tf.nn.softmax(self.y_test_logits)
 
 		# self.eval_accuracy = self.y_test_pred\
@@ -250,10 +249,10 @@ class GenerativeClassifier( object ):
 		# self.eval_cross_entropy = self.y_test_pred.loss
 		# self.eval_precision, self.eval_recall = self.y_test_pred.softmax\
 		# 		.evaluate_precision_recall( self.y_lab )
-		self.eval_accuracy, _ = tf.metrics.accuracy(self.y_lab, self.y_test_pred)
+		_, self.eval_accuracy = tf.metrics.accuracy(labels=tf.argmax(self.y_lab, 1), predictions=tf.argmax(self.y_test_logits, 1))
 		self.eval_cross_entropy = tf.losses.softmax_cross_entropy(self.y_lab, self.y_test_logits)
-		self.eval_precision, _ = tf.metrics.precision(self.y_lab, self.y_test_pred)
-		self.eval_recall, _ = tf.metrics.recall(self.y_lab, self.y_test_pred)
+		_, self.eval_precision = tf.metrics.precision(labels=tf.argmax(self.y_lab, 1), predictions=tf.argmax(self.y_test_logits, 1))
+		_, self.eval_recall = tf.metrics.recall(labels=tf.argmax(self.y_lab, 1), predictions=tf.argmax(self.y_test_logits, 1))
 
 
 	def train(      self, x_labelled, y, x_unlabelled,
@@ -294,7 +293,6 @@ class GenerativeClassifier( object ):
 		with self.session as sess:
 
 			sess.run(init)
-			sess.run(tf.local_variables_initializer())
 			if load_path == 'default': self.saver.restore( sess, self.save_path )
 			elif load_path is not None: self.saver.restore( sess, load_path )	
 
@@ -328,13 +326,13 @@ class GenerativeClassifier( object ):
 
 				if epoch % print_every == 0:
 
-					test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+					test_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES)
 					if test_vars:
 						if test_vars != self._test_vars:
 							self._test_vars = list(test_vars)
 							self._test_var_init_op = tf.variables_initializer(test_vars)
 						self._test_var_init_op.run()
-
+					sess.run(tf.local_variables_initializer())
 
 					eval_accuracy, eval_cross_entropy = \
 						sess.run( [self.eval_accuracy, self.eval_cross_entropy],
@@ -362,7 +360,7 @@ class GenerativeClassifier( object ):
 
 	def predict_labels( self, x_test, y_test ):
 
-		test_vars = tf.get_collection(bookkeeper.GraphKeys.TEST_VARIABLES)
+		test_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES)
 		tf.initialize_variables(test_vars).run()
 
 		x_test_mu = x_test[:,:self.dim_x]
